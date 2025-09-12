@@ -1,0 +1,341 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% GLARES TRAINING DATA SIMULATION
+%
+% Authors: Leqi Yin, Zhongliang Zu
+%
+% Correspondance: zhongliang.zu@vumc.org 
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clear;clc
+
+% Simulation parameters
+pulseduration=5; 
+exciteduration=0.002;
+exciteangle=90;   
+TR=0.02;
+
+tt_4p7T=0.25;
+
+Omax=1000;
+step=25;
+sep1=3.6*200;
+sep2=3*200;
+sep3=2.6*200;
+sep4=2*200;
+sep5=-1*200;
+sep6=-2.7*200;
+sep7=-3.5*200;
+% sep8=-1.5*200;
+
+fs1=0.002;  
+fs2=0.002;  
+fs3=0.0008; 
+fs4=0.0012; 
+fs5=0.008; 
+fs6=0.005; 
+fs7=0.007; 
+fm=0.1;
+
+ksw1=500;
+ksw2=5000;
+ksw3=140;
+ksw4=500;
+ksw5=20;
+ksw6=20;
+ksw7=20;
+% ksw8=20;
+kmw=25;
+
+R1S=1/1.5;
+R1W=1/1.6;
+R2W=1/0.03;
+R1M=1/1.5;
+R2M=1/0.00002;
+
+R2S1 = 1/0.004;
+R2S2 = 1/0.015;
+R2S3 = 1/0.02;
+R2S4 = 1/0.03;
+R2S5 = 1/0.002;
+R2S6 = 1/0.0008;
+R2S7 = 1/0.0008;
+
+offset= -Omax:step:Omax;
+k_0=[-2000, -1750, -1500, -1250, offset, 1250, 1500,1750,2000]';
+gauss = 100;
+
+%% Grid Size & Bounds
+
+
+grid_size = [512, 512]; 
+
+
+num_spectra = 89;     % offset points
+
+Bounds.T1W      = [1.3 2.1];%[1.3 2.1]
+Bounds.T2W      = [20, 50] * 0.001;%[20 50]
+Bounds.T2S5     = [0.0005, 0.0015]; %[0.0005, 0.0015]
+Bounds.T2S6     = [0.0006, 0.0012];%[0.0006, 0.0012]
+Bounds.T2S7     = [0.0006, 0.0012];%[0.0006, 0.0012]
+% Bounds.T2S8     = [0.0006, 0.0012];
+Bounds.T2M      = [20, 80] * 0.000001;%[20 80]
+
+Bounds.fs2      = [0.5, 1.5] * 0.003;
+Bounds.fs3      = [0.5, 1.5] * 0.0008;
+Bounds.fs4      = [0.5, 1.5] * 0.002;
+Bounds.fs5      = [0.0005, 0.01];  % Will enhance in MRI region
+Bounds.fs6      = [0.5, 1.5] * 0.004;%0.004
+Bounds.fs7      = [0.5, 1.5] * 0.008;%0.008
+% Bounds.fs8      = [0.5, 1.5] * 0.005;
+
+Bounds.fm       = [0.5, 1.5] * 0.1;
+Bounds.ksw2     = [3000, 7000];
+Bounds.ksw5     = [10, 80];       % Will enhance in MRI region
+
+Bounds.B1_shift = [0.9, 1.1];    % multiplicative B1 inhomogeneity (scales tt_4p7T)
+
+%% Smoothly Varying Parameters (for T1W, T2W, T2M, T2S6, T2S7, ksw2, B1 shifts)
+coarse_size = grid_size./2;
+[Xq, Yq] = meshgrid(1:grid_size(2), 1:grid_size(1));
+[Xc, Yc] = meshgrid(linspace(1, grid_size(2), coarse_size(2)), linspace(1, grid_size(1), coarse_size(1)));
+
+% smooth_params = {'T1W','T2W','T2M','T2S5','T2S6','T2S7','ksw2','ksw5','B1_shift'};
+smooth_params = {'T1W','T2W','T2M','T2S5','T2S6','T2S7','ksw2','ksw5','B1_shift',...
+    'fs2','fs3','fs4','fs5','fs6','fs7','fm'};
+for i = 1:length(smooth_params)
+    field = smooth_params{i};
+    cvals = Bounds.(field)(1) + (Bounds.(field)(2) - Bounds.(field)(1)) * rand(coarse_size);
+    Smoothed.(field) = interp2(Xc, Yc, cvals, Xq, Yq, 'linear'); % coarse→fine to impose smooth spatial variation
+end
+
+
+
+%% Simulation Loop
+
+for row = 1:grid_size(1)
+    for col = 1:grid_size(2)
+
+
+            % Smoothly Varying Params
+            R1W = 1 ./ Smoothed.T1W(row, col);
+            R2W = 1 ./ Smoothed.T2W(row, col);
+            R2M = 1 ./ Smoothed.T2M(row, col);
+            R2S5 = 1 ./ Smoothed.T2S5(row, col);
+            R2S6 = 1 ./ Smoothed.T2S6(row, col);
+            R2S7 = 1 ./ Smoothed.T2S7(row, col);
+            % R2S8 = 1 ./ Smoothed.T2S8(row, col);
+            ksw2 = Smoothed.ksw2(row, col);
+            ksw5 = Smoothed.ksw5(row, col);
+            % B0_shift = Smoothed.B0_shift(row, col);
+            B1_shift = Smoothed.B1_shift(row, col);
+
+            fs2 = Smoothed.fs2(row, col);
+            fs3 = Smoothed.fs3(row, col);
+            fs4 = Smoothed.fs4(row, col);
+            fs5 = Smoothed.fs5(row, col);
+            fs6 = Smoothed.fs6(row, col);
+            fs7 = Smoothed.fs7(row, col);
+            fm = Smoothed.fm(row, col);
+
+            % Frequency & Shift
+            k_4p7T  = k_0;
+            tt_shift = tt_4p7T * B1_shift;
+            % Apparent water R1
+            R1W_cal_obs = (R1W + (fm * R1M)) ./ (1 + fm);
+            satangle    = tt_shift * 42.6 * 360 * pulseduration;
+
+            % Z-spectrum
+            a25mspulse = runsteadysimgauss(ksw1, ksw2, ksw3, ksw4, ksw5, ...
+                ksw6, ksw7, kmw, fs1, fs2, fs3, fs4, fs5, fs6, fs7, 1, fm, ...
+                R1S, R2S1, R2S2, R2S3, R2S4, R2S5, R2S6, R2S7, R1W, R2W, R1M, R2M, ...
+                sep1*2*pi, sep2*2*pi, sep3*2*pi, sep4*2*pi, sep5*2*pi, sep6*2*pi, ...
+                sep7*2*pi, pulseduration, gauss, satangle,  2,  ...
+                k_4p7T*2*pi, 1);
+            
+            % Corresponding Z-spectrum reference
+            a25mspulse_ref = runsteadysimgauss(ksw1, ksw2, ksw3, ksw4, ksw5, ...
+                ksw6, ksw7, kmw, fs1, fs2, fs3, fs4, 0, fs6, fs7, 1, fm, ...
+                R1S, R2S1, R2S2, R2S3, R2S4, R2S5, R2S6, R2S7, R1W, R2W, R1M, R2M, ...
+                sep1*2*pi, sep2*2*pi, sep3*2*pi, sep4*2*pi, sep5*2*pi, sep6*2*pi, ...
+                sep7*2*pi, pulseduration, gauss, satangle, 2, ...
+                k_4p7T*2*pi, 1);
+            
+            % Corresponding Z-spectrum background
+            a25mspulse_effMT = runsteadysimgauss(ksw1, ksw2, ksw3, ksw4, ksw5, ...
+                ksw6, ksw7, kmw, 0, 0, 0, 0, 0, 0, 0,  1, fm, ...
+                R1S, R2S1, R2S2, R2S3, R2S4, R2S5, R2S6, R2S7, R1W, R2W, R1M, R2M, ...
+                sep1*2*pi, sep2*2*pi, sep3*2*pi, sep4*2*pi, sep5*2*pi, sep6*2*pi, ...
+                sep7*2*pi, pulseduration, gauss, satangle, 2, ...
+                k_4p7T*2*pi, 1);
+
+            % Corresponding AREX ground truth
+            AREX_GT = (fs5 .* ksw5 .* (tt_shift .* 42.6 * 2*pi).^2) ./ ...
+                      ((tt_shift .* 42.6 * 2*pi).^2 + (R2S5 + ksw5)*ksw5 + ...
+                      (ksw5 ./ (R2S5 + ksw5)) .* ((k_0 + sep5)*2*pi).^2);
+
+          
+            % Integration values of corresponding AREX ground truth
+            AREX_GT_int = trapz(1:7, AREX_GT(50:56));
+
+            % Store Data
+            Zspectra_clean = a25mspulse(:,6);
+            Zspectra_matrix(row, col, :) = Zspectra_clean;
+            Zspectra_ref_matrix(row, col, :) = a25mspulse_ref(:,6);
+            Zspectra_effMT_matrix(row, col, :) = a25mspulse_effMT(:,6);
+
+            AREX_GT_matrix(row, col, :)  = AREX_GT;
+            AREX_amp_matrix(row, col, :) = (fs5.*ksw5.*(tt_shift.*42.6*2*pi).^2./((tt_shift.*42.6*2*pi).^2+(R2S5+ksw5)*ksw5));
+            AREX_width_matrix(row, col, :)=2*sqrt((tt_shift.*42.6*2*pi).^2.*(R2S5+ksw5)/ksw5+(ksw5+R2S5)^2);
+            AREX_GT_int_matrix(row, col) = AREX_GT_int;
+
+            fm_matrix(row, col)     = fm;
+            R1W_cal_matrix(row, col)= R1W_cal_obs;
+            fs_cal_matrix(row, col) = fs5;
+            ksw_cal_matrix(row, col)= ksw5;
+
+            disp(['Processing voxel (', num2str(row), ',', num2str(col),')' ]);
+    
+    end
+end
+
+DL_CESTZ=reshape(Zspectra_matrix,grid_size(1)*grid_size(2),89);
+DL_amp=reshape(AREX_amp_matrix,grid_size(1)*grid_size(2),1);
+DL_width=reshape(AREX_width_matrix,grid_size(1)*grid_size(2),1);
+%%
+
+for i = 1:grid_size(1)
+    for j = 1:grid_size(2)
+        
+        % Initialize selection
+        selected_CESTZ = zeros(5,89);
+        selected_CESTZ_ref = zeros(5,89);
+        selected_fm = zeros(5,1);
+        selected_R1W = zeros(5,1);
+        
+        % Include the center element
+        selected_CESTZ(1,:) = squeeze(Zspectra_matrix(i, j, : ));
+
+        selected_CESTZ_ref(1,:) = squeeze(Zspectra_ref_matrix(i, j, : ));
+        selected_fm(1) = squeeze(fm_matrix(i, j));
+        selected_R1W(1) = squeeze(R1W_cal_matrix(i, j));
+        
+        % Compute distances to all other points in the matrix
+        distances = zeros(grid_size(1), grid_size(2));
+        for m = 1:grid_size(1)
+            for n = 1:grid_size(2)
+                distances(m, n) = sqrt((m - i)^2 + (n - j)^2);
+            end
+        end
+        % Picks the 4 nearest neighbors (Euclidean distance) to form a 5-voxel set.
+        
+        % Flatten and sort distances while keeping track of indices
+        [sorted_distances, sorted_indices] = sort(distances(:));
+        
+        % Select the 4 closest valid points (excluding itself)
+        for k = 2:5 % Start from 2 to exclude itself (first index is itself)
+            index = sorted_indices(k);
+            [ni, nj] = ind2sub([grid_size(1), grid_size(2)], index);
+            
+            selected_CESTZ(k, :) = squeeze(Zspectra_matrix(ni, nj, :));
+            selected_CESTZ_ref(k, :) = squeeze(Zspectra_ref_matrix(ni, nj, :));
+            selected_fm(k) = squeeze(fm_matrix(ni, nj));
+            selected_R1W(k) = squeeze(R1W_cal_matrix(ni, nj));
+
+        end
+
+        
+
+        Zspectra_sets_matrix(:,:,i,j)=selected_CESTZ;
+        SNR_min = 1/35;
+        SNR_max = 1/100;
+        % Noise std is a fraction of signal in [1/35, 1/100]; one std per row, constant across its 89 offsets.
+        rowSNRs = SNR_min + (SNR_max - SNR_max) * rand(5,1);
+        noise = rowSNRs .* randn(5, 89);
+        Zspectra_noised_sets_matrix(:,:,i,j)=selected_CESTZ+noise;
+        Zspectra_ref_sets_matrix(:,:,i,j)=selected_CESTZ_ref;
+        fm_sets_matrix(:,i,j)=selected_fm;
+        R1W_sets_matrix(:,i,j)=selected_R1W;
+    end
+end
+
+
+%%
+DL_CESTZ_sets=reshape(Zspectra_sets_matrix,5,89,grid_size(1)*grid_size(2));
+DL_CESTZ_noised_sets=reshape(Zspectra_noised_sets_matrix,5,89,grid_size(1)*grid_size(2));
+DL_CESTZ_ref_sets=reshape(Zspectra_ref_sets_matrix,5,89,grid_size(1)*grid_size(2));
+CESTZ1=reshape(Zspectra_matrix,grid_size(1)*grid_size(2),89);
+CESTZ_ref1=reshape(Zspectra_ref_matrix,grid_size(1)*grid_size(2),89);
+CESTZ_effMT1=reshape(Zspectra_effMT_matrix,grid_size(1)*grid_size(2),89);
+DL_CESTZ=CESTZ1';
+DL_CESTZ_noised=CESTZ1_noised';
+DL_CESTZ_ref=CESTZ_ref1';
+DL_CESTZ_effMT=CESTZ_effMT1';
+DL_fm=reshape(fm_matrix,1,grid_size(1)*grid_size(2));
+DL_fm_sets=reshape(fm_sets_matrix,5,grid_size(1)*grid_size(2));
+DL_R1W=reshape(R1W_cal_matrix,1,grid_size(1)*grid_size(2));
+DL_R1W_sets=reshape(R1W_sets_matrix,5,grid_size(1)*grid_size(2));
+
+%% LD reference genereation
+
+beta0_2pool= [0.9, 0, 280, 0.1, 0, 5000]; % initial test
+lb_2pool=[0.02, -200, 60, 0, -800, 2000]; % lower bound
+ub_2pool=[1, 200,2000,1, 800, 20000]; % upper bound
+
+x=k_0;
+x_2pool = [
+  -2000
+  -1750
+  -1500
+  -1250
+
+  -100
+   -75
+   -50
+   -25
+     0
+    25
+    50
+    75
+   100
+
+  1250
+  1500
+  1750
+  2000
+];
+x_2pool=x_2pool';
+
+trainingdata=squeeze(DL_CESTZ); 
+% randidx1=[randidx randidx+length(randidx)];
+% trainingdata=DL_All_pools(:,randidx); 
+
+
+    for ii=1:length(trainingdata)
+        sig=(1-trainingdata(:,ii));  % convert S/S0 to saturation-reduction
+
+        for i=1:1:4
+            sig_2pool(i)=sig(i);
+        end
+        for i=5:1:13
+            sig_2pool(i)=sig(i+36); % maps to indices 41..49 around water
+        end
+        for i=14:1:17
+            sig_2pool(i)=sig(i+72); % maps to indices 86..89
+        end
+
+        Delta=[1];
+
+        options=optimset('lsqcurvefit') ;
+        options = optimset('Display','off','TolFun',1e-8,'TolX',1e-8,'MaxFunEvals',5e4*length(x),'MaxIter',2e5) ;
+
+        [beta_2pool,resnorm,residual,exitflag,output,lambda,jacobian] = ...
+            lsqcurvefit(@matsolv_2pool, beta0_2pool, x_2pool, sig_2pool, lb_2pool, ub_2pool, options, Delta) ;
+
+        LoD_2pool_train(:,ii)=matsolv_2pool(beta_2pool,x,Delta);
+
+        sprintf("LoD----------------------- %d",ii)
+    end
+
+DL_LoD_inv=1-LoD_2pool_train;
